@@ -1,0 +1,62 @@
+---
+title: "Case 4intelligence"
+output: html_notebook
+---
+
+Carregando os pacotes usados
+
+```{r include=FALSE}
+library(tidyverse)
+library(readxl)
+library(janitor)
+```
+
+## Parte A
+
+**1) Importe o arquivo ”pmc.xlsx”pulando as três primeiras linhas**
+
+```{r import, include=FALSE}
+
+pmc <- read_xlsx("data/pmc.xlsx", skip = 3)
+  
+```
+
+**2) Renomeie as colunas e as deixe na seguinte ordem: “data”, “var”, “setor” e colunas de localidades. Para essas últimas, utilize siglas (BR e siglas dos estados).**
+
+```{r names}
+
+nomes_colunas <- c("data", "var", "setor", "br", "ce", "pe", "ba", "mg",
+                   "es", "rj", "sp", "pr", "sc", "rs", "go", "df")
+
+colnames(pmc) <- nomes_colunas
+  
+pmc %>% glimpse
+```
+
+**3. Converta os valores das colunas de Brasil e UFs para que fiquem na classe numérica.**
+
+```{r}
+
+pmc %>% 
+  mutate(across(.cols = br:df,
+                .fns = ~ suppressWarnings(as.numeric(.x))))
+
+```
+
+
+4. Substitua os textos na coluna “var”. Faça com que assumam apenas as palavras “volume” ou “receita”, a depender de cada linha.
+
+
+5. Converta a coluna “data” para que ela assuma a classe própria para data. O padrão deve ser YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia).
+
+
+6. Para as colunas “data” e “var”, preencha os espaços contendo “NA” com a informação
+que não seja ”NA”localizada imediatamente acima.
+
+
+```{r}
+fill
+```
+
+
+7. Exclua todas as linhas em que a coluna “var” seja igual à “receita
