@@ -9,11 +9,15 @@ Carregando os pacotes usados
 library(tidyverse)
 library(readxl)
 library(janitor)
+library(lubridate)
+library(rebus)
+library(zoo)
+library(urca)
 ```
 
 ## Parte A
 
-**1) Importe o arquivo ”pmc.xlsx”pulando as três primeiras linhas**
+**1. Importe o arquivo ”pmc.xlsx”pulando as três primeiras linhas**
 
 ```{r import, include=FALSE}
 
@@ -21,7 +25,7 @@ pmc <- read_xlsx("data/pmc.xlsx", skip = 3)
   
 ```
 
-**2) Renomeie as colunas e as deixe na seguinte ordem: “data”, “var”, “setor” e colunas de localidades. Para essas últimas, utilize siglas (BR e siglas dos estados).**
+**2. Renomeie as colunas e as deixe na seguinte ordem: “data”, “var”, “setor” e colunas de localidades. Para essas últimas, utilize siglas (BR e siglas dos estados).**
 
 ```{r names}
 
@@ -30,33 +34,419 @@ nomes_colunas <- c("data", "var", "setor", "br", "ce", "pe", "ba", "mg",
 
 colnames(pmc) <- nomes_colunas
   
-pmc %>% glimpse
 ```
 
 **3. Converta os valores das colunas de Brasil e UFs para que fiquem na classe numérica.**
 
 ```{r}
 
-pmc %>% 
-  mutate(across(.cols = br:df,
+pmc <- pmc %>% 
+   mutate(across(.cols = br:df,
                 .fns = ~ suppressWarnings(as.numeric(.x))))
 
 ```
 
 
-4. Substitua os textos na coluna “var”. Faça com que assumam apenas as palavras “volume” ou “receita”, a depender de cada linha.
+**4. Substitua os textos na coluna “var”. Faça com que assumam apenas as palavras “volume” ou “receita”, a depender de cada linha.**
+
+```{r}
+
+pmc <- pmc %>% 
+  mutate(var = case_when(
+           str_detect(var, pattern = "receita") ~ "receita",
+           str_detect(var, pattern = "volume") ~ "volume"
+         ))
+
+```
 
 
-5. Converta a coluna “data” para que ela assuma a classe própria para data. O padrão deve ser YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia).
+**5. Converta a coluna “data” para que ela assuma a classe própria para data. O padrão deve ser YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia).**
 
+```{r}
+
+meses <- readr::date_names_lang("pt")$mon
+
+numero_mes <- as.character(1:12)
+
+vetor_datas <- pmc$data
+
+for (i in 1:12) {
+  
+  vetor_datas <- str_replace(vetor_datas, 
+                             pattern = meses[i], 
+                             replacement = paste0(numero_mes[i], "-"))
+}
+
+pmc$data <- vetor_datas
+
+pmc <- pmc %>% 
+  mutate(data = 
+           str_remove_all(data, " ") %>% 
+           paste0("-01") %>% 
+           myd()) 
+
+```
 
 6. Para as colunas “data” e “var”, preencha os espaços contendo “NA” com a informação
 que não seja ”NA”localizada imediatamente acima.
 
 
 ```{r}
-fill
+
+pmc <- pmc %>% fill(data, var)
+
 ```
 
 
-7. Exclua todas as linhas em que a coluna “var” seja igual à “receita
+**7. Exclua todas as linhas em que a coluna “var” seja igual à “receita**
+
+```{r}
+
+pmc <- pmc %>% 
+  filter(var != "receita")
+
+```
+
+
+## Parte B
+
+**1. Utilize visualizações e estatísticas para comparar o setor de Móveis e Eletrodomésticos com os outros setores. Como a sede da empresa é em São Paulo, verifique o comportamento neste estado. (Dê maior destaque para o período da pandemia).**
+
+Para a análise, vamos comparar o índice de volume do setor de Móveis e Eletrodomésticos com o índice de volume médio
+
+
+
+```{r}
+
+library(ggthemes)
+
+pmc_geral <- pmc %>% 
+              filter(setor != "Móveis e eletrodomésticos",
+                     data >= "2019-04-01",
+                     data <= "2021-11-01") %>% 
+              group_by(data) %>% 
+              mutate(setor = "Todos",
+                     across(.cols = br:df,
+                            .fns = ~ mean(.x, na.rm = TRUE)))
+
+pmc_sp <- pmc %>% 
+  select(data, var, setor, sp) %>% 
+  pivot_wider(names_from = setor,
+              values_from = sp) %>% 
+  filter(data >= "2019-04-01",
+         data <= "2021-11-01") 
+  
+  ggplot() +
+  geom_rect(aes(xmin = as.Date("2020-03-13"), xmax = as.Date("2021-11-01"),  
+                ymin = -Inf, ymax = Inf), alpha = 0.2, fill = "#cf4238",
+            inherit.aes = F)+
+  geom_vline(xintercept = as.Date("2020-03-13"), linetype = "dashed")+
+  annotate("label", label = "Início da pandemia \ndo Covid-19", x = as.Date("2020-05-10"), y = 120)+
+  geom_line(data = pmc_sp, aes(data, `Móveis e eletrodomésticos`), 
+            color = "#01207a") +
+  geom_point(data = pmc_sp, aes(data, `Móveis e eletrodomésticos`),
+             color = "#01207a")+
+  geom_line(data = pmc_geral, 
+            aes(data, sp), color = "#02c26b")+
+  geom_point(data = pmc_geral, aes(data, sp), color = "#02c26b")+
+  scale_x_date(date_labels = "%m/%y",
+               date_breaks = "2 month",
+               limits = as.Date(c('2019-03-31',"2021-11-01")))+
+  labs(title = "Comparação volume de vendas de setor de móveis e eletrodomésticos e o restante do setor varejista",
+       subtitle = "Estado de São Paulo. Abril",
+       x = "",
+       y = "Índice")+
+  ggthemes::theme_clean()
+
+# TODO: indica legenda de geom_line  
+#       aumentar tamanho do gráfico - diminuir dpi?
+#       criar seta apontando início da pandemia
+#       label com seta apontando efeito rebote setor de móveis
+#       label com seta apontando sazonalidade
+#       label com seta apontando caída da pandemia
+  
+#obs.: gráfico melhor diagramado na imagem salva em png.
+
+ggsave("graphics/teste.png", dpi = "screen", width = 16, height = 9)
+
+# inserir gráfico dos últimos dez anos em menor escala, no canto superior direito
+
+```
+
+No gráfico feito acima, percebe-se a sazonalidade no período de fim de ano para ambas as séries. Além disso, nos meses iniciais da pandemia (de março a maio), ambas as séries diminuem consideravelmente o volume de vendas. Contudo, o setor de Móveis e eletrodomésticos sofre uma alta a partir de junho de 2020 atípica, o que podemos considerar como efeito rebote. O restante dos setores varejistas não sofre desse efeito, voltando ao patamar pré-pandemia.
+
+```{r}
+
+# TODO: criar summary statistics 
+
+```
+
+
+**2. Compare visualmente o efeito da pandemia neste setor entre os estados. Observe diferenças na intensidade e no tempo para recuperação.**
+
+Criar mapa em gif mostrando variação percentual
+tabela indicando tempo de recuperação nos estados anexada ao mapa
+
+```{r}
+
+library(sf)
+library(geobr)
+library(spData)
+library(viridis)
+library(gifski)
+library(gganimate)
+
+
+geobr::list_geobr()
+br_estados <- read_country(year = 2019)
+
+
+
+br_estados <- br_estados %>% 
+  mutate(abbrev_state = tolower(abbrev_state))
+
+spData::world
+
+pmc_map <- pmc %>% 
+  filter(setor == "Móveis e eletrodomésticos",
+         data >= "2019-01-01") %>% 
+  mutate(data = paste0(str_to_title(month(data, label = T)), " ", year(data))) 
+
+vetor_datas <- pmc_map$data
+
+pmc_map <- pmc_map %>% 
+  pivot_longer(names_to = "abbrev_state",
+               values_to = "volume",
+               cols = br:df) %>% 
+  pivot_wider(names_from = data,
+              values_from = volume) %>% 
+  dplyr::select(-var, -setor) 
+  
+for (i in seq_along(vetor_datas)) {
+  
+  pmc_map %>% right_join(br_estados) %>% 
+    ggplot(aes(geometry = geom)) +
+    geom_sf(data = world %>% 
+              filter(continent == "South America",
+                     name_long != "Brazil") , fill = "#a39e9e")+
+    geom_sf(aes_string(fill = paste0("`", vetor_datas[i], "`")))+
+    scale_fill_viridis(option = "D",
+                       begin = 0,
+                       direction = -1,
+                       limits = c(10, 175))+
+    annotate("label", label = "Mapa animado índice de volume \nde vendas do setor de \nMóveis e Eletrodomésticos", x = -27, y = -10, fontface = "bold")+
+    xlim(c(-60, -20))+
+    ylim(c(-33, -2))+
+    theme(panel.background = element_rect(fill = "#bee5fa"),
+          panel.grid = element_blank(),
+          legend.position = c(0.8, 0.3),
+          legend.background = element_rect(fill = "#f0e6d8"),
+          legend.margin = margin(8,8,10,8),
+          axis.ticks = element_blank(),
+          axis.text = element_blank())
+
+ggsave(paste0("graphics/png_gif/",i, ".png"), dpi = "screen", width = 10, height = 9)
+
+}
+
+
+
+pmc_map %>% right_join(br_estados) %>% 
+  ggplot(aes(geometry = geom)) +
+  geom_sf(data = world %>% 
+            filter(continent == "South America",
+                  name_long != "Brazil") , fill = "#a39e9e")+
+  geom_sf(aes_string(fill = paste0("`", vetor_datas[1], "`")))+
+  scale_fill_viridis(option = "A",
+                     begin = 0,
+                     direction = -1,
+                     limits = c(10, 175))+
+  annotate("label", label = "Mapa animado índice de volume \nde vendas do setor de \nMóveis e Eletrodomésticos", x = -27, y = -10, fontface = "bold")+
+  xlim(c(-60, -20))+
+  ylim(c(-33, -2))+
+  theme(panel.background = element_rect(fill = "#bee5fa"),
+        panel.grid = element_blank(),
+        legend.position = c(0.8, 0.3),
+        legend.background = element_rect(fill = "#f0e6d8"),
+        legend.margin = margin(4,4,8,4),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())+
+  transition_states(
+    
+  )
+
+ggsave("graphics/teste.png", dpi = "screen", width = 10, height = 9)
+
+gifski(list.files("./graphics/png_gif/", full.names = TRUE), 
+       "gif/teste1.gif", loop = TRUE, delay = .5)
+
+# TODO: checar pacotes usados e passar pro começo do código
+#       retirar margem branca dos mapas
+#       fixar margem da legenda
+#       revisão
+
+```
+
+
+
+**3. Calcule a variação percentual na fase inicial da pandemia, entre abril de 2019 e abril de 2020, para todos os estados, dentro do setor de interesse. Mostre graficamente as diferenças.**
+
+Gráfico em 1ª diferença 
+
+## PARTE C
+
+
+**1. Importe a base “rendimento_efetivo_real.csv”.**
+
+```{r}
+
+rendimento <- read_csv2("data/rendimento_efetivo_real.csv")
+
+```
+
+**2. Renomeie as colunas para que tenhamos ”data”e ”renda”.**
+
+```{r}
+
+colnames(rendimento) <- c("data", "renda", "NA")
+
+rendimento <- rendimento %>% 
+  select(data, renda)
+
+```
+
+**3. e a coluna data para o formato YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia).**
+
+```{r}
+
+rendimento <- rendimento %>% 
+  mutate(data = parse_date_time(data, orders = "Ym"))
+
+```
+
+**4. Junte com a base anterior já organizada.**
+
+```{r}
+
+pmc_rend <- pmc %>% 
+  full_join(rendimento) %>% 
+  select(data:br, renda) %>% 
+  filter(!is.na(renda))
+
+```
+
+
+**5. Gere uma visualização com as duas variáveis de interesse (note que é apenas para Brasil).**
+
+```{r}
+
+pmc_rend %>% 
+  filter(setor == "Móveis e eletrodomésticos") %>% 
+  ggplot(aes(br, renda))+
+  geom_point()
+    
+
+```
+
+
+**6. Crie um modelo estatístico que estime a relação entre volume de vendas de móveis e eletrodomésticos com o rendimento real médio efetivo**
+
+Dado que os dados são duas séries temporais, é necessário estimar um modelo de séries temporais multivariado. Podemos fazer um modelo tipo VAR ou tipo VECM, a depender do resultado do teste de cointegração, com a metodologia de Johansen. Além disso, vamos fazer o teste da raiz unitária, ADF (Augmented Dickley-Fuller) para saber se as séries são não-estacionárias ou estacionárias.
+
+```{r}
+
+# Criando as séries
+
+pmc_wide <- pmc_rend %>% 
+  pivot_wider(names_from = setor,
+              values_from = br)
+
+serie_renda <- ts(pmc_wide$renda, start = c(2012, 03), frequency = 12)
+serie_vol <- ts(pmc_wide$`Móveis e eletrodomésticos`, start = c(2012, 03), frequency = 12)
+
+# Teste de raiz unitária
+
+summary(ur.df(serie_renda)) 
+summary(ur.df(serie_vol))
+
+serie_renda_vol <- cbind(diff(serie_renda, 1), diff(serie_vol, 1))
+serie_renda_vol <- cbind(serie_renda, serie_vol)
+
+```
+Ambas as séries não rejeitaram a hipótese nula, de raiz unitária, pois os valores das estatísticas do teste são maiores que os valores de referência, logo são séries não estacionárias. Nosso modelo precisa ser I(1) para ambas séries.
+
+Agora, descobrir a quantidade ótima de lags a serem usados
+
+```{r}
+
+VARselect(serie_renda_vol, lag.max = 6)$selection
+
+
+```
+Vamos usar para a análise o método AIC, então teremos 5.
+
+Vamos testar a cointegração, estimar o modelo VECM e testá-lo para saber se é válido.
+
+```{r}
+
+jotest1 <- ca.jo(serie_renda_vol, type = "eigen", spec = "longrun", K = 4)
+summary(jotest1)
+
+```
+
+```{r}
+
+modelo_vecm <- VECM(serie_renda_vol, 4, r = 1, estim = "ML")
+summary(modelo_vecm)
+
+# Transformar VECM em VAR para fazer o teste de autocorrelação
+
+modelo_vecvar <- vec2var(jotest1, r = 1)
+serial.test(modelo_vecvar)
+
+```
+
+
+Rejeitamos ambas as hipóteses nula, então não há cointegração. Vamos fazer o modelo VAR, checar os coeficientes e realizar teste de autocorrelação, para saber se o modelo está bem especificado 
+
+```{r}
+
+modelo_var <- VAR(serie_renda_vol, p = 4)
+summary(modelo_var)
+coef(modelo_var)
+
+serial.test(modelo_var, lags.pt = 5)
+
+```
+Testes de diagnóstico
+
+```{r}
+
+
+
+```
+
+
+
+```{r}
+
+modelo_engle <- lm(data = serie_diff, formula = serie_renda_diff ~ serie_vol_diff)
+
+erro <- resid(modelo_engle)
+
+plot(erro)
+
+summary(ur.df(erro))
+
+```
+
+
+O modelo feito foi uma regressão linear simples com o índice de volume sendo a variável explicativa (explanatory) e renda real sendo variável resposta (response). O modelo é estatísticamente relevante, dado um nível de significância de 5%, pois o p-valor é menor que este nível. Contudo, o modelo é fraco, por omissão de variável, pois o R quadrado é somente 0,4% e o R quadrado ajustado 0,3%. Isso mostra que apenas 0,4% da renda é explicada pelo volume de vendas do setor. 
+
+**7. Caso ache apropriado, inclua mais variáveis na análise. Repita o processo e verifique se o resultado se mantém. (Utilize pacotes de APIs para baixar os dados, caso seja arquivo externo ao código, anexe a fonte – sugerimos SGS, Sidra e IPEA)**
+
+
+```{r}
+
+```
+
