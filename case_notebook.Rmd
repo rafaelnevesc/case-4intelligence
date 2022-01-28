@@ -13,6 +13,14 @@ library(lubridate)
 library(rebus)
 library(zoo)
 library(urca)
+
+library(sf)
+library(geobr)
+library(spData)
+library(viridis)
+library(gifski)
+library(scales)
+library(ggEx)
 ```
 
 ## Parte A
@@ -128,20 +136,22 @@ pmc_geral <- pmc %>%
   group_by(data) %>% 
   mutate(setor = "Todos",
          across(.cols = br:df,
-                .fns = ~ mean(.x, na.rm = TRUE)))
+                .fns = ~ mean(.x, na.rm = TRUE)),
+         sp = sp / 81.01429 * 100)
 
 pmc_moveis <- pmc %>% 
   select(data, var, setor, sp) %>% 
   pivot_wider(names_from = setor,
               values_from = sp) %>% 
   filter(data >= "2019-04-01",
-         data <= "2021-11-01") 
+         data <= "2021-11-01") %>% 
+  mutate(`Móveis e eletrodomésticos`  = `Móveis e eletrodomésticos` / 79.1 *100)
 
 arrows <- data.frame(
-  x1 = c(as.Date("2019-06-05"),as.Date("2020-09-19"), as.Date("2020-06-25"), as.Date("2021-04-01")),
-  y1 = c(123, 62, 128, 115),
-  x2 = c(as.Date("2019-11-20"),as.Date("2020-05-19"), as.Date("2020-03-23"), as.Date("2020-10-10")),
-  y2 = c(133, 50, 119, 105)
+  x1 = c(as.Date("2019-06-05"),as.Date("2020-09-19"),  as.Date("2021-04-01")),
+  y1 = c(148, 86, 140),
+  x2 = c(as.Date("2019-11-20"),as.Date("2020-05-19"), as.Date("2020-10-10")),
+  y2 = c(165, 68, 127)
 )
 
 ggplot() +
@@ -160,37 +170,28 @@ ggplot() +
              arrow = arrow(length = unit(0.07, "inch")),
              size = 0.4,
              color = "gray20")+
-  annotate("label", label = "Início da pandemia \ndo Covid-19", 
-           x = as.Date("2020-06-25"), y = 128)+
   annotate("label", label = "Pico sazonal de \nfim de ano",
-           x = as.Date("2019-06-05"), y = 123)+
+           x = as.Date("2019-06-05"), y = 148)+
   annotate("label", label = "Choque da \npandemia",
-           x = as.Date("2020-09-19"), y = 62)+
+           x = as.Date("2020-09-19"), y = 86)+
   annotate("label", label = "Efeito demanda reprimida \nsomente no setor de \nMóveis e Eletrodomésticos",
-           x = as.Date("2021-04-01"), y = 115)+
+           x = as.Date("2021-04-01"), y = 140)+
   scale_x_date(date_labels = "%m/%y",
                date_breaks = "2 month",
                limits = as.Date(c('2019-03-31',"2021-11-01")))+
   scale_color_manual(name = "Setor", values = c("Moveis e Eletrodomesticos" = "#01207a", "Restante de todo \nsetor varejista" = "#02c26b"), labels = c("Móveis e Eletrodomésticos", "Restante de todo \nsetor varejista"))+
   scale_fill_manual(name = "Período", values = c("covid" = "#cf4238"), labels = c("Período do Covid-19"))+
-  labs(title = "Comparação volume de vendas de setor de móveis e eletrodomésticos e o restante do setor varejista",
-       subtitle = "Estado de São Paulo. Abril de 2019 até novembro de 2021",
-       x = "",
+  labs(title = "Comparação de séries do índice volume de vendas de setor de móveis e eletrodomésticos e o restante do setor varejista",
+       subtitle = "Estado de São Paulo. Abril de 2019 até novembro de 2021. Abril de 2019 = 100",
+       x = NULL,
        y = "Índice")+
   ggthemes::theme_clean()
 
-# TODO: indica legenda de geom_line                                  ok
-#       aumentar tamanho do gráfico - diminuir dpi?                  off
-#       criar seta apontando início da pandemia                      ok
-#       label com seta apontando efeito rebote setor de móveis       ok
-#       label com seta apontando sazonalidade                        ok
-#       label com seta apontando caída da pandemia                   ok
+# TODO: gráfico ok
   
 #obs.: gráfico melhor diagramado na imagem salva em png.
 
-ggsave("graphics/teste.png", dpi = "screen", width = 16, height = 9)
-
-# inserir gráfico dos últimos dez anos em menor escala, no canto superior direito
+ggsave("graphics/grafico_serie_moveis_varejista.png", dpi = "screen", width = 16, height = 9)
 
 ```
 
@@ -205,18 +206,9 @@ No gráfico feito acima, percebe-se a sazonalidade no período de fim de ano par
 
 **2. Compare visualmente o efeito da pandemia neste setor entre os estados. Observe diferenças na intensidade e no tempo para recuperação.**
 
-Criar mapa em gif mostrando variação percentual
-tabela indicando tempo de recuperação nos estados anexada ao mapa
+Criarei um mapa animado em formato GIF para a visualização do índice de volume de vendas do setor de Móveis e Eletrodomésticos dentre os diferentes Estados, a cada mês. Para aumentar o poder explicativo, anexado ao mapa, haverá um gráfico em barras, indicando o valor preciso do índice para cada Estado. 
 
 ```{r}
-
-library(sf)
-library(geobr)
-library(spData)
-library(viridis)
-library(gifski)
-library(gganimate)
-
 
 geobr::list_geobr()
 br_estados <- read_country(year = 2019)
@@ -226,12 +218,10 @@ br_estados <- br_estados %>%
   mutate(abbrev_state = tolower(abbrev_state))
 
 
-pmc_map <- pmc %>% 
+pmc_map1 <- pmc %>% 
   filter(setor == "Móveis e eletrodomésticos",
-         data >= "2019-01-01") %>% 
-  mutate(data = paste0(str_to_title(month(data, label = T)), " ", year(data)),
-         across(.cols = br:df,
-                .fns = ~ ./lag(.))) %>% 
+         data >= "2019-04-01") %>% 
+  mutate(data = paste0(str_to_title(month(data, label = T)), " ", year(data))) %>% 
   filter(!is.na(br))
 
 vetor_datas <- pmc_map$data
@@ -246,15 +236,15 @@ temp %>%
   summarise(max = max(c_across()),
             min = min(c_across()))
 
-# max = 2.48 
-# min = 0.25
+# max = 172.6
+# min = 10.9
 
 # Criar histograma para avaliar se máximo e mínimo são outliers
 
 as.numeric(temp[1,]) %>% hist()
 as.numeric(temp[2,]) %>% hist()
 
-# Pelos histogramas, os valores encontrados anteriormente são outliers. Os valores escolhidos como máximo e mínimo da escala do mapa serão 0.5 e 2
+# Pelos histogramas, os valores escolhidos como máximo e mínimo da escala do mapa serão 172.6 e 30
 
 ```
 
@@ -264,7 +254,7 @@ as.numeric(temp[2,]) %>% hist()
 
 pmc_bar <- pmc %>% 
   filter(setor == "Móveis e eletrodomésticos",
-         data >= "2019-01-01") %>% 
+         data >= "2019-04-01") %>% 
   mutate(data = paste0(
     str_to_title(month(data, label = T)), " ", year(data)
   )) %>% 
@@ -279,83 +269,125 @@ pmc_bar <- pmc %>%
 
 # Dados do mapa
 
-pmc_map <- pmc_map %>% 
+pmc_map2 <- pmc_map1 %>% 
   pivot_longer(names_to = "abbrev_state",
                values_to = "volume",
                cols = br:df) %>% 
   pivot_wider(names_from = data,
               values_from = volume) %>% 
   dplyr::select(-var, -setor) 
-  
+
 for (i in seq_along(vetor_datas)) {
   
-pmc_map %>% right_join(br_estados) %>% 
-  ggplot(aes(geometry = geom)) +
-  geom_sf(data = spData::world %>% 
-            filter(continent == "South America",
-                   name_long != "Brazil") , fill = "#a39e9e")+
-  geom_sf(aes_string(fill = paste0("`", vetor_datas[i], "`")))+
-  scale_fill_viridis(option = "D",
-                     begin = 0,
-                     direction = -1,
-                     limits = c(0.5, 2))+
-  annotate("label", 
-           label = "Mapa animado índice de variação do \nvolume de vendas do setor de \nMóveis e Eletrodomésticos", 
-           x = -21, y = -6, fontface = "bold", size =8)+
-  xlim(c(-60, -10))+
-  ylim(c(-33, -2))+
-  theme(panel.background = element_rect(fill = "#bee5fa"),
-        panel.grid = element_blank(),
-        legend.position = c(0.35, 0.2),
-        legend.background = element_rect(fill = "#f0e6d8"),
-        legend.margin = margin(8,8,10,8),
-        axis.ticks = element_blank(),
-        axis.text = element_blank())+
-  annotation_custom(
-     
+  pmc_map2 %>% 
+    right_join(br_estados) %>% 
+    ggplot(aes(geometry = geom)) +
+    geom_sf(data = spData::world %>% 
+              filter(continent == "South America",
+                     name_long != "Brazil") , fill = "#a39e9e")+
+    geom_sf(aes_string(fill = paste0("`", vetor_datas[i], "`")))+
+    scale_fill_viridis(option = "D",
+                       begin = 0,
+                       direction = -1,
+                       limits = c(10, 175))+
+    annotate("label", 
+             label = "Mapa animado do índice de \nvolume de vendas do setor de \nMóveis e Eletrodomésticos \nem diferentes Estados", 
+             x = -21, y = -6, fontface = "bold", size =8)+
+    xlim(c(-60, -10))+
+    ylim(c(-33, -2))+
+    labs(x = NULL,
+         y = NULL)+
+    theme(panel.background = element_rect(fill = "#bee5fa"),
+          panel.grid = element_blank(),
+          legend.position = "none",
+          axis.ticks = element_blank(),
+          axis.text = element_blank())+
+    annotation_custom(
+      
       ggplotGrob(pmc_bar %>%
                    ggplot(aes_string("abbrev_state", 
                                      paste0("`", vetor_datas[i], "`"), 
                                      fill = paste0("`", vetor_datas[i], "`")))+
-        geom_col()+
-        scale_fill_viridis(option = "D",
-                           begin = 0,
-                           direction = -1,
-                           limits = c(10, 175))+
-        geom_text(aes_string(label = paste0("`", vetor_datas[i], "`")), nudge_y = 5)+
-        labs(title = "Tabela animada do índice de volume de vendas por Estado em nível",
-             subtitle = "Setor de Móveis e Eletrodomésticos",
-             y = NULL,
-             x = "Estado")+
-        ylim(c(0, 175))+
-        ggthemes::theme_clean())
-        ,
-    xmin = -36,
-    ymin = -32,
-    xmax = -10,
-    ymax = -16
-  )
-
-ggsave(paste0("graphics/png_gif/",i, ".png"), dpi = 500, width = 20, height = 12)
-
+                   geom_col()+
+                   scale_fill_viridis(option = "D",
+                                      begin = 0,
+                                      direction = -1,
+                                      limits = c(10, 175))+
+                   geom_text(aes_string(label = paste0("`", vetor_datas[i], "`")), nudge_y = 5)+
+                   labs(title = "Gráfico animado do índice de volume de vendas por Estado",
+                        subtitle = "Setor de Móveis e Eletrodomésticos",
+                        y = NULL,
+                        x = "Estado")+
+                   ylim(c(0, 175))+
+                   ggthemes::theme_clean())
+      ,
+      xmin = -36,
+      ymin = -32,
+      xmax = -10,
+      ymax = -16
+    )
+  
+  ggsave(paste0("graphics/png_gif/",
+                str_pad(i, width = 2, side = "left", pad = "0"), ".png"), 
+         dpi = 80, width = 20, height = 12)
+  print(i)
 }
 
 
 gifski(list.files("./graphics/png_gif/", full.names = TRUE), 
-       "gif/teste1.gif", loop = TRUE, delay = .5)
+       "gif/mapa_grafico_volume_moveis.gif", loop = TRUE, delay = .75, width = 1000, height = 600)
 
 # TODO: checar pacotes usados e passar pro começo do código
 #       retirar margem branca dos mapas
-#       fixar margem da legenda
-#       revisão
+    
 
 ```
-O GIF permite ver 
+O GIF permite ver as diferenças entre os Estados por meio da comparação visual de intensidade de cor no mapa e permite ver a mesma informação da maneira usual, pelo gráfico. Há uma forte queda, principalmente em março e abril de 2020, mas logo em seguida há a subida em maio a patamares anteriores. Ou seja, o setor foi afetado pelo choque de oferta, mas conseguiu se recuperar do ciclo rapidamente.
 
 
 **3. Calcule a variação percentual na fase inicial da pandemia, entre abril de 2019 e abril de 2020, para todos os estados, dentro do setor de interesse. Mostre graficamente as diferenças.**
 
 Gráfico em 1ª diferença 
+
+```{r}
+
+pmc_var <- pmc %>% 
+  filter(setor == "Móveis e eletrodomésticos",
+         data >= "2019-03-01", data <= "2020-04-01") %>%  
+  select(data, br) %>% 
+  mutate(var_pct = (br / lag(br)) - 1) %>% 
+  filter(data > "2019-03-01") %>% 
+  mutate(label_var_pct = paste0(round(var_pct * 100, digits = 2),"%"))
+
+# média geométrica = variação pct no período abril 2019 - fevereiro 2020
+media_pre_covid <- pmc_var %>% 
+  filter(data < "2020-03-01") %>% 
+  summarise(media = exp(mean(log(var_pct+1)))-1) %>% as.numeric()
+
+pmc_var %>% 
+  ggplot(aes(data, var_pct)) +
+  geom_line(color = "red") +
+  scale_y_continuous(labels = scales::percent)+
+  geom_vline(xintercept = as.Date("2020-02-27"), linetype = "F1", alpha = 0.5, color = "gray50")+
+  geom_segment(aes(x = as.Date('2019-04-01'), xend = as.Date("2020-02-27"),
+                   y = media_pre_covid, yend = media_pre_covid), linetype = "dotdash")+
+  annotate("label", label = "A variação percentual entre \nabril de 2019 e fevereiro de 2020 foi \nde 0,4%",
+           x = as.Date("2019-10-31"), y = -0.05)+
+    annotate("label", label = "Início da pandemia",
+           x = as.Date("2020-03-20"), y = 0.2)+
+  scale_x_date(date_labels = "%m/%y",
+               date_breaks = "2 month",
+               limits = as.Date(c('2019-04-01',"2020-04-02")))+
+  labs(title = "Variação percentual do volume de vendas no setor de Móveis e Eletrodomésticos",
+       subtitle = "Brasil. Abril de 2019 até abril de 2020",
+       x = NULL,
+       y = "Variação Percentual")+
+  ggthemes::theme_clean()
+
+ggsave("graphics/grafico_serie_pct_moveis.png", dpi = "screen", width = 16, height = 9)
+
+```
+
 
 ## PARTE C
 
