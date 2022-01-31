@@ -3,6 +3,7 @@ title: "Case 4intelligence"
 output:
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 Carregando os pacotes usados
@@ -130,8 +131,6 @@ pmc <- pmc %>%
 
 Para a análise, vamos comparar o índice de volume do setor de Móveis e Eletrodomésticos com o índice de volume médio
 
-
-
 ```{r plot series volume varejo moveis}
 
 pmc_geral <- pmc %>% 
@@ -206,12 +205,6 @@ ggsave("graphics/grafico_serie_moveis_varejista.png", plot = p_serie_mov_varej, 
 ![grafico](graphics/grafico_serie_moveis_varejista.png)
 
 No gráfico feito acima, percebe-se a sazonalidade no período de fim de ano para ambas as séries. Além disso, nos meses iniciais da pandemia (de março a maio), ambas as séries diminuem consideravelmente o volume de vendas. Contudo, o setor de Móveis e eletrodomésticos sofre uma alta a partir de junho de 2020 atípica, o que podemos considerar como efeito da demanda reprimida, ou algum outro fator a ser melhor estudado. O restante dos setores varejistas não sofre desse efeito, voltando ao patamar pré-pandemia.
-
-```{r}
-
-# TODO: criar summary statistics 
-
-```
 
 
 **2. Compare visualmente o efeito da pandemia neste setor entre os estados. Observe diferenças na intensidade e no tempo para recuperação.**
@@ -344,10 +337,6 @@ for (i in seq_along(vetor_datas)) {
 
 gifski(list.files("./graphics/png_gif/", full.names = TRUE), 
        "gif/mapa_grafico_volume_moveis.gif", loop = TRUE, delay = 1.5, width = 1000, height = 600, progress = FALSE)
-
-# TODO: checar pacotes usados e passar pro começo do código
-#       retirar margem branca dos mapas
-    
 
 ```
 ![gif_mapa](gif/mapa_grafico_volume_moveis.gif)
